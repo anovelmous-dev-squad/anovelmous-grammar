@@ -41,7 +41,7 @@ class GrammarFilter(object):
                 json.dump(self.bigrams, f)
 
     def build_vocab_targeted_bigrams(self):
-        vocab_occurrences = {vocab_term.content: {} for vocab_term in self.vocabulary}
+        vocab_occurrences = {vocab_term: {} for vocab_term in self.vocabulary}
 
         preceding_token = self.corpus[0]
         encountered_punctuation = False
