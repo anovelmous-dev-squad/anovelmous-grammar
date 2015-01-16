@@ -8,7 +8,7 @@ setup(
     license='MIT',
     author='Greg Ziegan',
     author_email='greg.ziegan@gmail.com',
-    description='',
+    description='Grammar module for the anovelmous collaborative writing app.',
     install_requires=[
         'nltk>=3.0',
         'numpy>=1.9'
