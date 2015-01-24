@@ -70,5 +70,8 @@ class GrammarFilter(object):
         Returns a subset of a given vocabulary based on whether its terms are "grammatically correct". This status
         is defined by whether the bigram has ever occured in the corpus.
         """
+        if preceding_token in string.punctuation:
+            return self.vocabulary  # TODO: develop naive check for words following punctuation characters
+
         return [token for token in self.vocabulary
                 if self.is_occurring_combination(token, preceding_token)]
