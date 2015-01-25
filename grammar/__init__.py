@@ -11,9 +11,18 @@ class GrammarFilter(object):
     An object used to filter out all uncommon word sequences in a given chapter.
     """
 
-    def __init__(self, vocabulary, corpus=None):
+    def __init__(self, vocabulary, corpus=None, nltk_data_path=None):
+        """
+
+        :param vocabulary: a list of strings to filter by context
+        :param corpus: provide your own nltk_corpus
+        :param nltk_data_path: absolute path to look for the nltk data directory where the corpus is stored.
+        """
         self.vocabulary = vocabulary
         self.vocabulary_lookup = {token: True for token in self.vocabulary}
+
+        if nltk_data_path:
+            data.path.append(nltk_data_path)
         self.tokenizer = data.load('tokenizers/punkt/english.pickle')
 
         corpora_cache_fp = os.path.join(os.path.dirname(__file__), 'corpora_cache')
