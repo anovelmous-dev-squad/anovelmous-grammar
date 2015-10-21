@@ -1,4 +1,4 @@
-from nltk import data, Text
+from nltk import data, Text, word_tokenize, pos_tag
 from nltk.corpus import brown
 import numpy as np
 import string
@@ -15,7 +15,7 @@ class GrammarFilter(object):
         """
 
         :param vocabulary: a list of strings to filter by context
-        :param corpus: provide your own nltk_corpus
+        :param corpus: provide your own nltk corpus
         :param nltk_data_path: absolute path to look for the nltk data directory where the corpus is stored.
         """
         self.vocabulary = vocabulary
@@ -29,25 +29,44 @@ class GrammarFilter(object):
         if not os.path.exists(corpora_cache_fp):
             os.makedirs(corpora_cache_fp)
 
-        full_brown_corpus_file_path = os.path.join(corpora_cache_fp, 'full_brown_corpus.npy')
-        full_brown_bigrams_file_path = os.path.join(corpora_cache_fp, 'full_brown_bigrams.json')
+        full_brown_corpus_fp = os.path.join(corpora_cache_fp, 'full_brown_corpus.npy')
+        full_brown_bigrams_fp = os.path.join(corpora_cache_fp, 'full_brown_bigrams.json')
+        full_brown_pos_sequences_fp = os.path.join(corpora_cache_fp, 'full_brown_pos_sequences.json')
 
         if corpus:
             self.corpus = corpus
             self.bigrams = self.build_vocab_targeted_bigrams()
+            self.pos_sequences = self.build_pos_sequences_db()
         elif not corpus \
-                and os.path.exists(full_brown_corpus_file_path) \
-                and os.path.exists(full_brown_bigrams_file_path):
-            self.corpus = np.load(full_brown_corpus_file_path)
-            with open(full_brown_bigrams_file_path) as f:
+                and os.path.exists(full_brown_corpus_fp) \
+                and os.path.exists(full_brown_bigrams_fp) \
+                and os.path.exists(full_brown_pos_sequences_fp):
+            self.corpus = np.load(full_brown_corpus_fp)
+            with open(full_brown_bigrams_fp) as f:
                 self.bigrams = json.load(f)
+            with open(full_brown_pos_sequences_fp) as f:
+                self.pos_sequences = json.load(f)
         else:
             brown_text = Text(word.lower() for word in brown.words())
             self.corpus = np.array(brown_text.tokens)
             self.bigrams = self.build_vocab_targeted_bigrams()
-            np.save(full_brown_corpus_file_path, self.corpus)
-            with open(full_brown_bigrams_file_path, 'w') as f:
+            self.pos_sequences = self.build_pos_sequences_db()
+            np.save(full_brown_corpus_fp, self.corpus)
+            with open(full_brown_bigrams_fp, 'w') as f:
                 json.dump(self.bigrams, f)
+            with open(full_brown_pos_sequences_fp, 'w') as f:
+                json.dump(self.pos_sequences, f)
+
+    def build_pos_sequences_db(self):
+        pos_sequences = {}
+        for sent in brown.tagged_sents():
+            positional_dict = pos_sequences
+            for token, tag in sent:
+                if not positional_dict.get(tag):
+                    positional_dict[tag] = {}
+
+                positional_dict = positional_dict[tag]
+        return pos_sequences
 
     def build_vocab_targeted_bigrams(self):
         vocab_occurrences = {vocab_term: {} for vocab_term in self.vocabulary}
@@ -74,13 +93,37 @@ class GrammarFilter(object):
     def is_occurring_combination(self, candidate_token, preceding_token):
         return self.bigrams[candidate_token].get(preceding_token)
 
-    def get_grammatically_correct_vocabulary_subset(self, preceding_token):
+    def get_grammatically_correct_vocabulary_subset(self, sent, use_pos=False):
         """
-        Returns a subset of a given vocabulary based on whether its terms are "grammatically correct". This status
-        is defined by whether the bigram has ever occured in the corpus.
+        Returns a subset of a given vocabulary based on whether its terms are "grammatically correct".
         """
+        sent_tokens = word_tokenize(sent)
+
+        if use_pos:
+            self.get_subset_by_pos_filter(sent_tokens)
+        else:
+            preceding_token = sent_tokens[-1]
+            self.get_subset_by_bigram_filter(preceding_token)
+
+    def get_subset_by_pos_filter(self, sent_tokens):
+        return [token for token in self.vocabulary if self.is_occurring_pos_sequence(sent_tokens, token)]
+
+    def get_subset_by_bigram_filter(self, preceding_token):
         if preceding_token in string.punctuation:
-            return self.vocabulary  # TODO: develop naive check for words following punctuation characters
+            return self.vocabulary
 
         return [token for token in self.vocabulary
                 if self.is_occurring_combination(token, preceding_token)]
+
+    def is_occurring_pos_sequence(self, sent_tokens, new_token):
+        candidate_sent_tokens = sent_tokens[:]
+        candidate_sent_tokens.append(new_token)
+        tagged_tokens = pos_tag(candidate_sent_tokens)
+
+        positional_dict = self.pos_sequences
+        for token, tag in tagged_tokens:
+            positional_dict = positional_dict.get(tag, None)
+            if positional_dict is None:
+                return False
+
+        return True
