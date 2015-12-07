@@ -1,6 +1,7 @@
 from nltk import data, Text, word_tokenize, pos_tag
 from nltk.corpus import brown
 import numpy as np
+from scipy import stats
 import string
 import os
 import json
@@ -80,12 +81,41 @@ class GrammarFilter(object):
         pos_sequences = {}
         for sent in brown.tagged_sents():
             positional_dict = pos_sequences
-            for token, tag in sent:
-                if not positional_dict.get(tag):
-                    positional_dict[tag] = {}
+            trigrams = [sent[i: i+3] for i in range(len(sent) - 2)]
+            for trigram in trigrams:
+                for i, (token, tag) in enumerate(trigram):
+                    end_term = True if i == 2 else False
+                    if end_term:
+                        if positional_dict.get(tag):
+                            positional_dict[tag] += 1
+                        else:
+                            positional_dict[tag] = 1
+                        continue
 
-                positional_dict = positional_dict[tag]
+                    if not positional_dict.get(tag):
+                        positional_dict[tag] = {}
+
+                    positional_dict = positional_dict[tag]
+                positional_dict = pos_sequences
+        for first_token, subsequent_options in pos_sequences.items():
+            for second_token, final_options in subsequent_options.items():
+                filtered_options = {}
+                if len(final_options) < 2:
+                    filtered_options = {k: 1.0 for k in final_options.keys()}
+                else:
+                    filtered_options = self.filter_by_min_confidence_interval(
+                        final_options,
+                        confidence=0.95
+                    )
+                pos_sequences[first_token][second_token] = filtered_options
         return pos_sequences
+
+    def filter_by_min_confidence_interval(self, pos_options, confidence=0.95):
+        total_occurences = sum(pos_options.values())
+        pos_means = {k: v / total_occurences for k, v in pos_options.items()}
+        bayes_results = stats.bayes_mvs(list(pos_means.values()), confidence)
+        threshold = bayes_results[2].minmax[0]
+        return {k: v for k, v in pos_means.items() if v > threshold}
 
     def build_vocab_targeted_bigrams(self):
         vocab_occurrences = {vocab_term: {} for vocab_term in self.vocabulary}
@@ -133,6 +163,19 @@ class GrammarFilter(object):
     def is_occurring_trigram(self, prev2_token, prev_token, token):
         return self.trigrams[token].get(prev2_token + ' ' + prev_token)
 
+    def get_likelihood(self, prev2_token, prev_token, new_token):
+        trigram = [prev2_token, prev2_token, new_token]
+        tagged_tokens = pos_tag(trigram)
+
+        positional_dict = self.pos_sequences
+        for i, (token, tag) in enumerate(tagged_tokens):
+            positional_dict = positional_dict.get(tag, None)
+            if positional_dict is None:
+                return None
+
+            if i == 2:
+                return positional_dict
+
     def get_grammatically_correct_vocabulary_subset(self, sent,
                                                     sent_filter='pos'):
         """
@@ -144,8 +187,12 @@ class GrammarFilter(object):
 
         sent_tokens = word_tokenize(sent)
 
-        if sent_filter == 'pos':
-            return self.get_subset_by_pos_filter(sent_tokens)
+        if sent_filter == 'pos' and len(sent_tokens) > 1:
+            token_likelihoods = self.get_likelihood_subset_by_pos_filter(
+                prev2_token=sent_tokens[-2], prev_token=sent_tokens[-1]
+            )
+            sorted_tokens = sorted(token_likelihoods, key=lambda t: t[1])
+            return [token for token, likelihood in sorted_tokens]
         elif sent_filter == 'bigram' or len(sent_tokens) < 2:
             preceding_token = sent_tokens[-1]
             return self.get_subset_by_bigram_filter(preceding_token)
@@ -154,9 +201,14 @@ class GrammarFilter(object):
             prev_token = sent_tokens[-1]
             return self.get_subset_by_trigram_filter(prev2_token, prev_token)
 
-    def get_subset_by_pos_filter(self, sent_tokens):
-        return [token for token in self.vocabulary
-                if self.is_occurring_pos_sequence(sent_tokens, token)]
+    def get_likelihood_subset_by_pos_filter(self, prev2_token, prev_token):
+        tokens = []
+        for token in self.vocabulary:
+            likelihood = self.get_likelihood(prev2_token, prev_token, token)
+            if not likelihood:
+                continue
+            tokens.append((token, likelihood))
+        return tokens
 
     def get_subset_by_bigram_filter(self, preceding_token):
         if preceding_token in string.punctuation:
@@ -171,16 +223,3 @@ class GrammarFilter(object):
 
         return [token for token in self.vocabulary
                 if self.is_occurring_trigram(prev2_token, prev_token, token)]
-
-    def is_occurring_pos_sequence(self, sent_tokens, new_token):
-        candidate_sent_tokens = sent_tokens[:]
-        candidate_sent_tokens.append(new_token)
-        tagged_tokens = pos_tag(candidate_sent_tokens)
-
-        positional_dict = self.pos_sequences
-        for token, tag in tagged_tokens:
-            positional_dict = positional_dict.get(tag, None)
-            if positional_dict is None:
-                return False
-
-        return True
