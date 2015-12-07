@@ -45,17 +45,22 @@ class GrammarFilter(object):
         full_brown_pos_sequences_fp = os.path.join(
             corpora_cache_fp, 'full_brown_pos_sequences.json'
         )
+        full_brown_token_sequences_fp = os.path.join(
+            corpora_cache_fp, 'full_brown_token_sequences.json'
+        )
 
         if corpus:
             self.corpus = corpus
             self.bigrams = self.build_vocab_targeted_bigrams()
             self.trigrams = self.build_vocab_targeted_trigrams()
-            self.pos_sequences = self.build_pos_sequences_db()
+            self.pos_sequences, self.token_sequences = \
+                self.build_pos_sequences_and_token_sequences()
         elif not corpus \
                 and os.path.exists(full_brown_corpus_fp) \
                 and os.path.exists(full_brown_bigrams_fp) \
                 and os.path.exists(full_brown_trigrams_fp) \
-                and os.path.exists(full_brown_pos_sequences_fp):
+                and os.path.exists(full_brown_pos_sequences_fp) \
+                and os.path.exists(full_brown_token_sequences_fp):
             self.corpus = np.load(full_brown_corpus_fp)
             with open(full_brown_bigrams_fp) as f:
                 self.bigrams = json.load(f)
@@ -63,12 +68,15 @@ class GrammarFilter(object):
                 self.trigrams = json.load(f)
             with open(full_brown_pos_sequences_fp) as f:
                 self.pos_sequences = json.load(f)
+            with open(full_brown_token_sequences_fp) as f:
+                self.token_sequences = json.load(f)
         else:
             brown_text = Text(word.lower() for word in brown.words())
             self.corpus = np.array(brown_text.tokens)
             self.bigrams = self.build_vocab_targeted_bigrams()
             self.trigrams = self.build_vocab_targeted_trigrams()
-            self.pos_sequences = self.build_pos_sequences_db()
+            self.pos_sequences, self.token_sequences = \
+                self.build_pos_sequences_and_token_sequences()
             np.save(full_brown_corpus_fp, self.corpus)
             with open(full_brown_bigrams_fp, 'w') as f:
                 json.dump(self.bigrams, f)
@@ -76,13 +84,19 @@ class GrammarFilter(object):
                 json.dump(self.trigrams, f)
             with open(full_brown_pos_sequences_fp, 'w') as f:
                 json.dump(self.pos_sequences, f)
+            with open(full_brown_token_sequences_fp, 'w') as f:
+                json.dump(self.token_sequences, f)
 
-    def build_pos_sequences_db(self):
+    def build_pos_sequences_and_token_sequences(self):
         pos_sequences = {}
+        token_sequences = {}
         for sent in brown.tagged_sents():
             positional_dict = pos_sequences
             trigrams = [sent[i: i+3] for i in range(len(sent) - 2)]
             for trigram in trigrams:
+                token_sequence = ' '.join([token[0] for token in trigram])
+                tag_sequence = [token[1] for token in trigram]
+                token_sequences[token_sequence] = tag_sequence
                 for i, (token, tag) in enumerate(trigram):
                     end_term = True if i == 2 else False
                     if end_term:
@@ -108,7 +122,7 @@ class GrammarFilter(object):
                         confidence=0.95
                     )
                 pos_sequences[first_token][second_token] = filtered_options
-        return pos_sequences
+        return pos_sequences, token_sequences
 
     def filter_by_min_confidence_interval(self, pos_options, confidence=0.95):
         total_occurences = sum(pos_options.values())
@@ -165,8 +179,13 @@ class GrammarFilter(object):
 
     def get_likelihood(self, prev2_token, prev_token, new_token):
         trigram = [prev2_token, prev2_token, new_token]
-        tagged_tokens = pos_tag(trigram)
+        trigram_string = ' '.join(trigram)
+        if not self.token_sequences.get(trigram_string):
+            return None
 
+        tags = self.token_sequences[trigram_string]
+        tagged_tokens = [(token, tags[i])
+                         for i, token in enumerate(trigram)]
         positional_dict = self.pos_sequences
         for i, (token, tag) in enumerate(tagged_tokens):
             positional_dict = positional_dict.get(tag, None)
@@ -177,7 +196,7 @@ class GrammarFilter(object):
                 return positional_dict
 
     def get_grammatically_correct_vocabulary_subset(self, sent,
-                                                    sent_filter='pos'):
+                                                    sent_filter='combined'):
         """
         Returns a subset of a given vocabulary based on whether its
         terms are "grammatically correct".
@@ -187,16 +206,31 @@ class GrammarFilter(object):
 
         sent_tokens = word_tokenize(sent)
 
+        if sent_filter == 'combined':
+            combined_filters = self.get_pos_filtered_vocab(sent_tokens) + \
+                               self.get_trigram_filtered_vocab(sent_tokens) + \
+                               self.get_bigram_filtered_vocab(sent_tokens)
+            return combined_filters
+
         if sent_filter == 'pos' and len(sent_tokens) > 1:
-            token_likelihoods = self.get_likelihood_subset_by_pos_filter(
-                prev2_token=sent_tokens[-2], prev_token=sent_tokens[-1]
-            )
-            sorted_tokens = sorted(token_likelihoods, key=lambda t: t[1])
-            return [token for token, likelihood in sorted_tokens]
+            return self.get_pos_filtered_vocab(sent_tokens)
         elif sent_filter == 'bigram' or len(sent_tokens) < 2:
-            preceding_token = sent_tokens[-1]
-            return self.get_subset_by_bigram_filter(preceding_token)
+            return self.get_bigram_filtered_vocab(sent_tokens)
         elif sent_filter == 'trigram':
+            return self.get_trigram_filtered_vocab(sent_tokens)
+
+    def get_pos_filtered_vocab(self, sent_tokens):
+        token_likelihoods = self.get_likelihood_subset_by_pos_filter(
+            prev2_token=sent_tokens[-2], prev_token=sent_tokens[-1]
+        )
+        sorted_tokens = sorted(token_likelihoods, key=lambda t: t[1])
+        return [token for token, likelihood in sorted_tokens]
+
+    def get_trigram_filtered_vocab(self, sent_tokens):
+        preceding_token = sent_tokens[-1]
+        return self.get_subset_by_bigram_filter(preceding_token)
+
+    def get_bigram_filtered_vocab(self, sent_tokens):
             prev2_token = sent_tokens[-2]
             prev_token = sent_tokens[-1]
             return self.get_subset_by_trigram_filter(prev2_token, prev_token)
