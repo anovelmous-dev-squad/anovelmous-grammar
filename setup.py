@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='anovelmous-grammar',
-    version='0.2.0',
+    version='0.2.1',
     packages=['grammar'],
     url='https://github.com/anovelmous-dev-squad/anovelmous-grammar',
     license='MIT',

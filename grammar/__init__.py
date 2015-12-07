@@ -7,6 +7,34 @@ import os
 import json
 
 
+def get_partial_sentence(tokens):
+    if len(tokens) == 0:
+        return None
+
+    terminal_punctuations = ['!', '.', '?']
+    if len(tokens) == 1:
+        return str(tokens[0]) \
+            if tokens[0] not in terminal_punctuations else None
+    if len(tokens) == 2:
+        if tokens[0] in terminal_punctuations:
+            return tokens[1] \
+                if tokens[1] not in terminal_punctuations else None
+        if tokens[1] in terminal_punctuations:
+            return ''
+        return tokens
+
+    partial_sent = tokens
+    if tokens[0] in terminal_punctuations:
+        partial_sent = tokens[1:] \
+            if tokens[-1] not in terminal_punctuations else None
+    elif tokens[-2] in terminal_punctuations:
+        partial_sent = tokens[-1] \
+            if tokens[-1] not in terminal_punctuations else None
+    elif tokens[-1] in terminal_punctuations:
+        partial_sent = None
+    return partial_sent
+
+
 class GrammarFilter(object):
     """
     An object used to filter out all uncommon word sequences in a given chapter
@@ -195,21 +223,25 @@ class GrammarFilter(object):
             if i == 2:
                 return positional_dict
 
-    def get_grammatically_correct_vocabulary_subset(self, sent,
+    def get_grammatically_correct_vocabulary_subset(self, text,
                                                     sent_filter='combined'):
         """
         Returns a subset of a given vocabulary based on whether its
         terms are "grammatically correct".
         """
-        if sent == '':
+        tokens = word_tokenize(text)
+        sent_tokens = get_partial_sentence(tokens)
+
+        if not sent_tokens:
             return self.vocabulary
 
-        sent_tokens = word_tokenize(sent)
-
         if sent_filter == 'combined':
+            if len(sent_tokens) < 2:
+                return self.get_bigram_filtered_vocab(sent_tokens)
+
             combined_filters = self.get_pos_filtered_vocab(sent_tokens) + \
-                               self.get_trigram_filtered_vocab(sent_tokens) + \
-                               self.get_bigram_filtered_vocab(sent_tokens)
+                self.get_trigram_filtered_vocab(sent_tokens) + \
+                self.get_bigram_filtered_vocab(sent_tokens)
             return combined_filters
 
         if sent_filter == 'pos' and len(sent_tokens) > 1:
@@ -226,11 +258,11 @@ class GrammarFilter(object):
         sorted_tokens = sorted(token_likelihoods, key=lambda t: t[1])
         return [token for token, likelihood in sorted_tokens]
 
-    def get_trigram_filtered_vocab(self, sent_tokens):
+    def get_bigram_filtered_vocab(self, sent_tokens):
         preceding_token = sent_tokens[-1]
         return self.get_subset_by_bigram_filter(preceding_token)
 
-    def get_bigram_filtered_vocab(self, sent_tokens):
+    def get_trigram_filtered_vocab(self, sent_tokens):
             prev2_token = sent_tokens[-2]
             prev_token = sent_tokens[-1]
             return self.get_subset_by_trigram_filter(prev2_token, prev_token)
