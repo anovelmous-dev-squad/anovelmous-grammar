@@ -8,7 +8,7 @@ import json
 
 class GrammarFilter(object):
     """
-    An object used to filter out all uncommon word sequences in a given chapter.
+    An object used to filter out all uncommon word sequences in a given chapter
     """
 
     def __init__(self, vocabulary, corpus=None, nltk_data_path=None):
@@ -16,7 +16,8 @@ class GrammarFilter(object):
 
         :param vocabulary: a list of strings to filter by context
         :param corpus: provide your own nltk corpus
-        :param nltk_data_path: absolute path to look for the nltk data directory where the corpus is stored.
+        :param nltk_data_path: absolute path to look for the nltk data
+                               directory where the corpus is stored.
         """
         self.vocabulary = vocabulary
         self.vocabulary_lookup = {token: True for token in self.vocabulary}
@@ -25,14 +26,24 @@ class GrammarFilter(object):
             data.path.append(nltk_data_path)
         self.tokenizer = data.load('tokenizers/punkt/english.pickle')
 
-        corpora_cache_fp = os.path.join(os.path.dirname(__file__), 'corpora_cache')
+        corpora_cache_fp = os.path.join(
+            os.path.dirname(__file__), 'corpora_cache'
+        )
         if not os.path.exists(corpora_cache_fp):
             os.makedirs(corpora_cache_fp)
 
-        full_brown_corpus_fp = os.path.join(corpora_cache_fp, 'full_brown_corpus.npy')
-        full_brown_bigrams_fp = os.path.join(corpora_cache_fp, 'full_brown_bigrams.json')
-        full_brown_trigrams_fp = os.path.join(corpora_cache_fp, 'full_brown_trigrams.json')
-        full_brown_pos_sequences_fp = os.path.join(corpora_cache_fp, 'full_brown_pos_sequences.json')
+        full_brown_corpus_fp = os.path.join(
+            corpora_cache_fp, 'full_brown_corpus.npy'
+        )
+        full_brown_bigrams_fp = os.path.join(
+            corpora_cache_fp, 'full_brown_bigrams.json'
+        )
+        full_brown_trigrams_fp = os.path.join(
+            corpora_cache_fp, 'full_brown_trigrams.json'
+        )
+        full_brown_pos_sequences_fp = os.path.join(
+            corpora_cache_fp, 'full_brown_pos_sequences.json'
+        )
 
         if corpus:
             self.corpus = corpus
@@ -122,9 +133,11 @@ class GrammarFilter(object):
     def is_occurring_trigram(self, prev2_token, prev_token, token):
         return self.trigrams[token].get(prev2_token + ' ' + prev_token)
 
-    def get_grammatically_correct_vocabulary_subset(self, sent, sent_filter='pos'):
+    def get_grammatically_correct_vocabulary_subset(self, sent,
+                                                    sent_filter='pos'):
         """
-        Returns a subset of a given vocabulary based on whether its terms are "grammatically correct".
+        Returns a subset of a given vocabulary based on whether its
+        terms are "grammatically correct".
         """
         if sent == '':
             return self.vocabulary
@@ -142,7 +155,8 @@ class GrammarFilter(object):
             return self.get_subset_by_trigram_filter(prev2_token, prev_token)
 
     def get_subset_by_pos_filter(self, sent_tokens):
-        return [token for token in self.vocabulary if self.is_occurring_pos_sequence(sent_tokens, token)]
+        return [token for token in self.vocabulary
+                if self.is_occurring_pos_sequence(sent_tokens, token)]
 
     def get_subset_by_bigram_filter(self, preceding_token):
         if preceding_token in string.punctuation:
@@ -170,4 +184,3 @@ class GrammarFilter(object):
                 return False
 
         return True
-
