@@ -54,3 +54,7 @@ docs/_build/
 target/
 
 .idea
+.ipynb_checkpoints
+*.ipynb
+
+grammar/corpora_cache
